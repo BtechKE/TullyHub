@@ -2,198 +2,87 @@
 <html lang="en">
 <head>
   <meta charset="UTF-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
   <title>TallyHub — Live Election Results</title>
 
   <link rel="icon" type="image/svg+xml" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 64 64'%3E%3Crect width='64' height='64' rx='14' fill='%23A5CF83'/%3E%3Cpath d='M18 33 L28 43 L46 21' stroke='%231A1A19' stroke-width='8' fill='none' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E">
+  <link rel="apple-touch-icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 64 64'%3E%3Crect width='64' height='64' rx='14' fill='%23A5CF83'/%3E%3Cpath d='M18 33 L28 43 L46 21' stroke='%231A1A19' stroke-width='8' fill='none' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E">
   <meta name="theme-color" content="#A5CF83">
 
   <style>
-    :root {
-      --green: #A5CF83;
-      --green-dark: #7EAE5C;
-      --blue: #1591DC;
-      --ink: #1A1A19;
-      --slate: #435663;
-      --canvas: #FDFAF6;
-      --border: rgba(26,26,25,0.08);
+    html, body {
+      margin: 0; padding: 0; height: 100%; overflow: hidden;
+      background: #FDFAF6;
     }
-    * { margin: 0; padding: 0; box-sizing: border-box; }
-    body {
-      font-family: 'Segoe UI', system-ui, -apple-system, sans-serif;
-      background: var(--canvas);
-      color: var(--ink);
-      min-height: 100dvh;
-      display: flex;
-      flex-direction: column;
-      align-items: center;
-      justify-content: center;
-      padding: 24px;
-      text-align: center;
-      overflow: hidden;
+    iframe {
+      width: 100%;
+      height: 100vh;
+      border: 0;
+      display: block;
     }
-
-    body::before {
-      content: '';
-      position: fixed;
-      top: -240px; right: -240px;
-      width: 600px; height: 600px;
-      background: radial-gradient(circle, rgba(165, 207, 131, 0.22) 0%, transparent 70%);
-      pointer-events: none;
-    }
-    body::after {
-      content: '';
-      position: fixed;
-      bottom: -260px; left: -240px;
-      width: 600px; height: 600px;
-      background: radial-gradient(circle, rgba(21, 145, 220, 0.14) 0%, transparent 70%);
-      pointer-events: none;
-    }
-
-    .wrap {
-      position: relative;
-      z-index: 1;
-      display: flex;
-      flex-direction: column;
-      align-items: center;
+    #loader {
+      position: fixed; inset: 0;
+      display: flex; flex-direction: column;
+      align-items: center; justify-content: center;
       gap: 20px;
-      max-width: 480px;
+      background: #FDFAF6;
+      color: #435663;
+      font-family: 'Segoe UI', system-ui, sans-serif;
+      z-index: 10;
+      transition: opacity 0.4s ease;
     }
-
+    #loader.hide { opacity: 0; pointer-events: none; }
     .mark {
-      width: 84px;
-      height: 84px;
+      width: 84px; height: 84px;
       border-radius: 22px;
-      background: var(--green);
-      display: flex;
-      align-items: center;
-      justify-content: center;
+      background: #A5CF83;
+      display: flex; align-items: center; justify-content: center;
       box-shadow: 0 12px 32px rgba(165, 207, 131, 0.4);
       animation: pop 0.5s cubic-bezier(0.34, 1.4, 0.64, 1);
     }
     .mark svg { width: 52px; height: 52px; }
-    @keyframes pop {
-      from { opacity: 0; transform: scale(0.85); }
-      to   { opacity: 1; transform: scale(1); }
-    }
-
-    h1 {
-      font-size: 28px;
-      font-weight: 800;
-      letter-spacing: -0.8px;
-      line-height: 1.15;
-    }
-    h1 span { color: var(--green-dark); }
-
-    p {
-      color: var(--slate);
-      font-size: 15px;
-      line-height: 1.5;
-    }
-
-    .loader {
-      margin-top: 12px;
-      width: 32px;
-      height: 32px;
+    @keyframes pop { from { opacity: 0; transform: scale(0.85); } to { opacity: 1; transform: scale(1); } }
+    .label { font-size: 14px; font-weight: 600; letter-spacing: 0.3px; color: #435663; }
+    .spinner {
+      width: 32px; height: 32px;
       border: 3px solid rgba(165, 207, 131, 0.25);
-      border-top-color: var(--green-dark);
+      border-top-color: #7EAE5C;
       border-radius: 50%;
       animation: spin 0.9s linear infinite;
     }
     @keyframes spin { to { transform: rotate(360deg); } }
-
-    .status {
-      font-size: 12.5px;
-      color: var(--slate);
-      font-weight: 500;
-      letter-spacing: 0.3px;
-      min-height: 18px;
-    }
-
-    .btn {
-      display: inline-flex;
-      align-items: center;
-      gap: 8px;
-      padding: 13px 24px;
-      background: var(--ink);
-      color: var(--canvas);
-      border: none;
-      border-radius: 12px;
-      font-size: 15px;
-      font-weight: 700;
-      font-family: inherit;
-      cursor: pointer;
-      text-decoration: none;
-      transition: background-color 0.15s, transform 0.1s;
-      margin-top: 8px;
-    }
-    .btn:hover { background: var(--blue); }
-    .btn:active { transform: scale(0.97); }
-
-    .foot {
-      position: fixed;
-      bottom: 20px;
-      left: 0;
-      right: 0;
-      text-align: center;
-      font-size: 11.5px;
-      color: var(--slate);
-      opacity: 0.7;
-    }
   </style>
 </head>
 <body>
 
-  <div class="wrap">
+  <div id="loader">
     <div class="mark">
       <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64">
         <path d="M18 33 L28 43 L46 21" stroke="#1A1A19" stroke-width="8" fill="none"
               stroke-linecap="round" stroke-linejoin="round"/>
       </svg>
     </div>
-    <h1>Welcome to <span>TallyHub</span></h1>
-    <p>Your live election results platform.<br>Redirecting you to the app…</p>
-    <div class="loader"></div>
-    <div class="status" id="status">Connecting…</div>
-    <a class="btn" id="manualBtn" href="#" style="display:none;">
-      <i>→</i> Open TallyHub
-    </a>
+    <div class="label">Loading TallyHub…</div>
+    <div class="spinner"></div>
   </div>
 
-  <div class="foot">
-    © <span id="yr"></span> TallyHub · Secure Election Management
-  </div>
+  <iframe
+    id="app"
+    src="https://script.google.com/macros/s/AKfycbwc66k62CTnCgGhu8ThEvbJF_vCdMNm18QKJBaY1VY_uDXl2PXISY5ZE8a6xIQNZv6J/exec"
+    allow="fullscreen; clipboard-write"
+    sandbox="allow-scripts allow-same-origin allow-forms allow-popups allow-modals allow-downloads allow-top-navigation-by-user-activation allow-storage-access-by-user-activation">
+  </iframe>
 
   <script>
-    // ================================================
-    //  CONFIGURATION — replace with YOUR Apps Script URL
-    // ================================================
-    var APPS_SCRIPT_URL = 'https://script.google.com/macros/s/AKfycbwc66k62CTnCgGhu8ThEvbJF_vCdMNm18QKJBaY1VY_uDXl2PXISY5ZE8a6xIQNZv6J/exec';
+    var iframe = document.getElementById('app');
+    var loader = document.getElementById('loader');
 
-    document.getElementById('yr').textContent = new Date().getFullYear();
+    iframe.addEventListener('load', function () {
+      setTimeout(function () { loader.classList.add('hide'); }, 300);
+    });
 
-    var statusEl = document.getElementById('status');
-    var manualBtn = document.getElementById('manualBtn');
-    manualBtn.href = APPS_SCRIPT_URL;
-
-    // Quick health check — shows "Offline" state if Apps Script is unreachable
-    var timeoutId;
-    function checkAndRedirect() {
-      statusEl.textContent = 'Redirecting…';
-      // Redirect after a short delay so the animation isn't jarring
-      timeoutId = setTimeout(function () {
-        window.location.replace(APPS_SCRIPT_URL);
-      }, 800);
-    }
-
-    // Also show the manual button after 3s in case the redirect gets blocked
-    setTimeout(function () {
-      manualBtn.style.display = 'inline-flex';
-      statusEl.textContent = 'Taking longer than usual…';
-    }, 3000);
-
-    // Start the redirect sequence
-    checkAndRedirect();
+    // Safety net: if the iframe never fires load, force-hide after 6s
+    setTimeout(function () { loader.classList.add('hide'); }, 6000);
   </script>
 </body>
 </html>
