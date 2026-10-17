@@ -1,0 +1,43 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <title>Aspirant Data Test</title>
+  <style>body { font-family: sans-serif; padding: 20px; } pre { background: #eee; padding: 10px; }</style>
+</head>
+<body>
+  <h2>Live Leaderboard Test</h2>
+  <div id="output">Loading...</div>
+
+  <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+  <script>
+    // Use your exact keys from the previous test
+    const supabaseUrl = 'https://hhlrytakwifmgzktebzh.supabase.co';
+    const supabaseKey = 'sb_publishable_eaKzqM_sDHvW9UOCvLkOqQ_QcL9nS2M'; 
+    const db = window.supabase.createClient(supabaseUrl, supabaseKey);
+
+    async function getLeaderboard() {
+      try {
+        // 1. Get the totals from our new View
+        // 2. Join it with the 'candidates' table to get the names!
+        const { data, error } = await db
+          .from('candidate_totals')
+          .select(`
+            total_votes,
+            candidates ( name, party, photo_url )
+          `)
+          .order('total_votes', { ascending: false }); // Sort highest to lowest
+
+        if (error) throw error;
+
+        // Print it out
+        document.getElementById('output').innerHTML = `<pre>${JSON.stringify(data, null, 2)}</pre>`;
+
+      } catch (err) {
+        document.getElementById('output').innerText = "Error: " + err.message;
+      }
+    }
+
+    getLeaderboard();
+  </script>
+</body>
+</html>
