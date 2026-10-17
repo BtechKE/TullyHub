@@ -1,1 +1,63 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Supabase Connection Test</title>
+  <style>
+    body { font-family: system-ui, sans-serif; padding: 20px; background: #FDFAF6; color: #1B211A; }
+    .card { background: white; padding: 20px; border-radius: 12px; box-shadow: 0 4px 12px rgba(0,0,0,0.1); max-width: 600px; margin: 0 auto; }
+    h1 { color: #7EAE5C; }
+    pre { background: #F0F0F0; padding: 10px; border-radius: 8px; overflow-x: auto; font-size: 14px; }
+    .error { color: #C4453A; font-weight: bold; }
+  </style>
+</head>
+<body>
 
+<div class="card">
+  <h1>Supabase Connection Test</h1>
+  <p>Fetching candidates directly from the database...</p>
+  <div id="output">Loading...</div>
+</div>
+
+<!-- 1. Load the Supabase Library -->
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+
+<script>
+  // 2. Initialize Supabase (REPLACE THESE WITH YOUR ACTUAL KEYS)
+  const supabaseUrl = 'https://hhlrytakwifmgzktebzh.supabase.co/rest/v1/';
+  const supabaseKey = 'sb_publishable_eaKzqM_sDHvW9UOCvLkOqQ_QcL9nS2M';
+  const supabase = window.supabase.createClient(supabaseUrl, supabaseKey);
+
+  // 3. Fetch Data
+  async function getCandidates() {
+    const output = document.getElementById('output');
+    
+    try {
+      // Query the 'candidates' table we created
+      const { data, error } = await supabase
+        .from('candidates')
+        .select('*')
+        .limit(5); // Just get 5 for the test
+
+      if (error) throw error;
+
+      // If successful, print the JSON to the screen
+      output.innerHTML = `
+        <p style="color: green; font-weight: bold;">✅ Successfully connected to Supabase!</p>
+        <p>Here are the first 5 candidates:</p>
+        <pre>${JSON.stringify(data, null, 2)}</pre>
+      `;
+      
+    } catch (err) {
+      output.innerHTML = `<p class="error">❌ Error: ${err.message}</p>`;
+      console.error(err);
+    }
+  }
+
+  // Run the function
+  getCandidates();
+</script>
+
+</body>
+</html>
