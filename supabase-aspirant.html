@@ -1,0 +1,144 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Aspirant Dashboard (Supabase)</title>
+  <style>
+    :root { --green: #A5CF83; --green-dark: #7EAE5C; --blue: #1591DC; --ink: #1A1A19; --bg: #FDFAF6; }
+    body { font-family: system-ui, sans-serif; background: var(--bg); padding: 20px; color: var(--ink); }
+    .card { background: white; padding: 20px; border-radius: 16px; box-shadow: 0 4px 12px rgba(0,0,0,0.05); max-width: 600px; margin: 0 auto 20px; }
+    .hero { background: var(--ink); color: white; text-align: center; }
+    .hero h1 { margin: 0; font-size: 24px; }
+    .hero p { margin: 5px 0 15px; color: rgba(255,255,255,0.7); }
+    .stat-row { display: flex; justify-content: space-around; margin-top: 20px; border-top: 1px solid rgba(255,255,255,0.1); padding-top: 20px; }
+    .stat-num { font-size: 28px; font-weight: 800; }
+    .stat-lbl { font-size: 11px; text-transform: uppercase; color: rgba(255,255,255,0.5); }
+    .row { display: flex; align-items: center; justify-content: space-between; padding: 10px 0; border-bottom: 1px solid #eee; }
+    .row img { width: 40px; height: 40px; border-radius: 50%; object-fit: cover; }
+    .row-info { flex: 1; margin-left: 15px; }
+    .row-name { font-weight: bold; font-size: 14px; }
+    .row-party { font-size: 12px; color: #666; }
+    .row-votes { font-weight: 900; color: var(--green-dark); }
+    #login-view { text-align: center; display: block; }
+    #dashboard-view { display: none; }
+    input { padding: 10px; width: 80%; margin-bottom: 10px; border: 1px solid #ccc; border-radius: 8px; }
+    button { padding: 10px 20px; background: var(--ink); color: white; border: none; border-radius: 8px; cursor: pointer; width: 80%; font-weight: bold; }
+    button:hover { background: var(--green-dark); }
+  </style>
+</head>
+<body>
+
+  <!-- LOGIN SCREEN -->
+  <div id="login-view" class="card">
+    <h2>Aspirant Login</h2>
+    <p>Enter your login code (e.g. sifuna) and password123</p>
+    <input type="text" id="loginCode" placeholder="Login Code">
+    <input type="password" id="password" placeholder="Password">
+    <button onclick="login()">Sign In</button>
+  </div>
+
+  <!-- DASHBOARD SCREEN -->
+  <div id="dashboard-view">
+    <div class="card hero">
+      <div id="hero-title">Loading...</div>
+      <div class="stat-row">
+        <div><div class="stat-num" id="hero-votes">0</div><div class="stat-lbl">Votes</div></div>
+        <div><div class="stat-num" id="hero-pct">0%</div><div class="stat-lbl">Share</div></div>
+        <div><div class="stat-num" id="hero-rank">#1</div><div class="stat-lbl">Rank</div></div>
+      </div>
+    </div>
+
+    <div class="card">
+      <h3>Full Race</h3>
+      <div id="leaderboard">Loading...</div>
+    </div>
+    
+    <button onclick="logout()" style="background: #C4453A; margin: 0 auto; display: block; width: 200px;">Logout</button>
+  </div>
+
+  <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+  <script>
+    const supabaseUrl = 'https://hhlrytakwifmgzktebzh.supabase.co';
+    const supabaseKey = 'sb_publishable_eaKzqM_sDHvW9UOCvLkOqQ_QcL9nS2M'; // <-- PUT YOUR KEY HERE
+    const db = window.supabase.createClient(supabaseUrl, supabaseKey);
+
+    let currentUser = null;
+
+    // 1. LOGIN
+    async function login() {
+      const code = document.getElementById('loginCode').value.trim();
+      const pw = document.getElementById('password').value;
+      const email = code + '@tallyhub.com';
+
+      const { data, error } = await db.auth.signInWithPassword({ email: email, password: pw });
+      
+      if (error) {
+        alert("Login failed: " + error.message);
+        return;
+      }
+      
+      currentUser = data.user;
+      loadDashboard();
+    }
+
+    // 2. LOGOUT
+    async function logout() {
+      await db.auth.signOut();
+      document.getElementById('login-view').style.display = 'block';
+      document.getElementById('dashboard-view').style.display = 'none';
+    }
+
+    // 3. LOAD DATA
+    async function loadDashboard() {
+      document.getElementById('login-view').style.display = 'none';
+      document.getElementById('dashboard-view').style.display = 'block';
+
+      // A. Get their aspirant profile (using the auth_user_id column we linked)
+      const { data: profile } = await db.from('aspirants').select('*').eq('auth_user_id', currentUser.id).single();
+      
+      if (!profile) {
+        alert("Profile not found!");
+        return;
+      }
+
+      document.getElementById('hero-title').innerHTML = `<h1>${profile.name}</h1><p>${profile.position}</p>`;
+
+      // B. Get the leaderboard for THEIR position
+      const { data: results } = await db
+        .from('candidate_totals')
+        .select(`total_votes, candidates!inner ( name, party, photo_url, position )`)
+        .eq('candidates.position', profile.position)
+        .order('total_votes', { ascending: false });
+
+      // C. Render the leaderboard
+      const totalVotes = results.reduce((sum, r) => sum + r.total_votes, 0);
+      const html = results.map((r, index) => {
+        const c = r.candidates;
+        const pct = totalVotes > 0 ? ((r.total_votes / totalVotes) * 100).toFixed(1) : 0;
+        const img = c.photo_url || 'https://via.placeholder.com/40';
+        
+        // If this is the logged-in candidate, highlight them in the hero card
+        if (c.name === profile.name) {
+            document.getElementById('hero-votes').innerText = r.total_votes.toLocaleString();
+            document.getElementById('hero-pct').innerText = pct + '%';
+            document.getElementById('hero-rank').innerText = '#' + (index + 1);
+        }
+
+        return `
+          <div class="row">
+            <img src="${img}">
+            <div class="row-info">
+              <div class="row-name">${c.name}</div>
+              <div class="row-party">${c.party}</div>
+            </div>
+            <div class="row-votes">${r.total_votes.toLocaleString()} <span style="font-size:11px; color:#999;">(${pct}%)</span></div>
+          </div>
+        `;
+      }).join('');
+
+      document.getElementById('leaderboard').innerHTML = html;
+    }
+  </script>
+</body>
+</html>
