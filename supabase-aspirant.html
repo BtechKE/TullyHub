@@ -94,7 +94,7 @@
       document.getElementById('login-view').style.display = 'none';
       document.getElementById('dashboard-view').style.display = 'block';
 
-      // A. Get their aspirant profile (using the auth_user_id column we linked)
+      // A. Get profile
       const { data: profile } = await db.from('aspirants').select('*').eq('auth_user_id', currentUser.id).single();
       
       if (!profile) {
@@ -104,22 +104,29 @@
 
       document.getElementById('hero-title').innerHTML = `<h1>${profile.name}</h1><p>${profile.position}</p>`;
 
-      // B. Get the leaderboard for THEIR position
+      // B. Get leaderboard
       const { data: results } = await db
         .from('candidate_totals')
         .select(`total_votes, candidates!inner ( name, party, photo_url, position )`)
         .eq('candidates.position', profile.position)
         .order('total_votes', { ascending: false });
 
-      // C. Render the leaderboard
       const totalVotes = results.reduce((sum, r) => sum + r.total_votes, 0);
+      
       const html = results.map((r, index) => {
         const c = r.candidates;
         const pct = totalVotes > 0 ? ((r.total_votes / totalVotes) * 100).toFixed(1) : 0;
-        const img = c.photo_url || 'https://via.placeholder.com/40';
         
-        // If this is the logged-in candidate, highlight them in the hero card
-        if (c.name === profile.name) {
+        // FIX 1: Transform GitHub blob URLs to raw image URLs
+        let img = c.photo_url || 'https://via.placeholder.com/40';
+        if (img.includes('github.com') && img.includes('/blob/')) {
+             img = img.replace('github.com', 'raw.githubusercontent.com').replace('/blob/', '/');
+        }
+        
+        // FIX 2: Trim and lowercase names to ensure a perfect match
+        const isMe = c.name.trim().toLowerCase() === profile.name.trim().toLowerCase();
+        
+        if (isMe) {
             document.getElementById('hero-votes').innerText = r.total_votes.toLocaleString();
             document.getElementById('hero-pct').innerText = pct + '%';
             document.getElementById('hero-rank').innerText = '#' + (index + 1);
@@ -127,9 +134,9 @@
 
         return `
           <div class="row">
-            <img src="${img}">
+            <img src="${img}" onerror="this.src='https://via.placeholder.com/40'">
             <div class="row-info">
-              <div class="row-name">${c.name}</div>
+              <div class="row-name">${c.name} ${isMe ? '<span style="color:#1591DC; font-size:10px; background:#e0f0ff; padding:2px 6px; border-radius:10px; margin-left:5px;">YOU</span>' : ''}</div>
               <div class="row-party">${c.party}</div>
             </div>
             <div class="row-votes">${r.total_votes.toLocaleString()} <span style="font-size:11px; color:#999;">(${pct}%)</span></div>
