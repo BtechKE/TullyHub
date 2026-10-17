@@ -19,13 +19,14 @@
       try {
         // 1. Get the totals from our new View
         // 2. Join it with the 'candidates' table to get the names!
-        const { data, error } = await db
+               const { data, error } = await db
           .from('candidate_totals')
           .select(`
             total_votes,
-            candidates ( name, party, photo_url )
+            candidates!inner ( name, party, photo_url, position )
           `)
-          .order('total_votes', { ascending: false }); // Sort highest to lowest
+          .eq('candidates.position', 'President') // <--- NEW LINE
+          .order('total_votes', { ascending: false });
 
         if (error) throw error;
 
