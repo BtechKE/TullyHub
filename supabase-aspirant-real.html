@@ -2293,95 +2293,91 @@ async function loadOverview(silent) {
   if (!silent) setPulse('loading');
 
   try {
-    // 1. Fetch all candidates with their total votes
+    // 1. Fetch overall totals
     const { data: results, error: err1 } = await db
       .from('candidate_totals')
       .select(`total_votes, candidates!inner ( code, name, party, photo_url, position, ward_id )`);
-
     if (err1) throw err1;
 
-    // 2. Fetch wards and streams for the counts
-    const { data: wardsData } = await db.from('wards').select('*');
-    const { data: streamsData } = await db.from('streams').select('code');
+    // 2. Fetch Ward-level totals (from our new view) + Wards list + Streams for counts
+    const { data: wardRes } = await db.from('ward_results').select('*, candidates!inner(name, party, photo_url)');
+    const { data: wardsData } = await db.from('wards').select('*').order('name');
+    const { data: streamsData } = await db.from('streams').select('code, ward_id');
     const { data: reportedRaw } = await db.from('results').select('stream_code');
-    
-    // 3. Format the data exactly how your UI expects it
+
+    // 3. Format Overall Leaderboard
     let tabTotals = {};
     let leaderboardByPos = {};
-    POSITIONS.forEach(p => { 
-        tabTotals[p] = 0; 
-        leaderboardByPos[p] = []; 
-    });
+    POSITIONS.forEach(p => { tabTotals[p] = 0; leaderboardByPos[p] = []; });
 
     results.forEach(r => {
       const c = r.candidates;
       if (!leaderboardByPos[c.position]) return;
-      
       tabTotals[c.position] += r.total_votes;
       leaderboardByPos[c.position].push({
-        code: c.code,
-        name: c.name,
-        party: c.party,
-        photo: c.photo_url || '',
-        votes: r.total_votes,
-        ward: c.ward_id
+        code: c.code, name: c.name, party: c.party, photo: c.photo_url || '', votes: r.total_votes, ward: c.ward_id
       });
     });
 
-    // Calculate percentages and sort
     for (let p in leaderboardByPos) {
       const list = leaderboardByPos[p].sort((a, b) => b.votes - a.votes);
       const total = tabTotals[p];
-      list.forEach(item => {
-        item.pct = total > 0 ? ((item.votes / total) * 100).toFixed(1) : '0.0';
-      });
+      list.forEach(item => { item.pct = total > 0 ? ((item.votes / total) * 100).toFixed(1) : '0.0'; });
     }
 
-    // 4. Build the OVERVIEW object (this is what your UI reads)
+    // 4. Format Ward Data for the current position
+    let formattedWards = (wardsData || []).map(w => {
+      const wStreams = streamsData.filter(s => s.ward_id === w.id);
+      const wStreamCodes = wStreams.map(s => s.code);
+      const reportedInWard = new Set(reportedRaw.map(r => r.stream_code).filter(code => wStreamCodes.includes(code))).size;
+
+      // Get candidates for this ward
+      const wCandidates = wardRes
+        .filter(wr => wr.ward_id === w.id && wr.position === VIEW_POS)
+        .map(wr => ({
+            code: wr.candidate_code, name: wr.candidates.name, party: wr.candidates.party, photo: wr.candidates.photo_url, votes: wr.total_votes
+        })).sort((a, b) => b.votes - a.votes);
+
+      const wTotal = wCandidates.reduce((sum, c) => sum + c.votes, 0);
+      const wLeader = wCandidates[0] || null;
+
+      return {
+        wardId: w.id, wardName: w.name, candidates: wCandidates,
+        leader: wLeader, totalVotes: wTotal,
+        leaderPct: wTotal > 0 && wLeader ? ((wLeader.votes / wTotal) * 100).toFixed(1) : '0.0',
+        streamsTotal: wStreams.length, streamsDone: reportedInWard
+      };
+    });
+
+    // 5. Build the Overview Object
     const currentList = leaderboardByPos[VIEW_POS] || [];
     const globalTotal = tabTotals[VIEW_POS] || 0;
     
-    // Find user's row
-    let ownRow = null;
-    let ownRank = null;
+    let ownRow = null; let ownRank = null;
     if (!USER.isSpectator && USER.name) {
         const myIndex = currentList.findIndex(c => c.name.trim().toLowerCase() === USER.name.trim().toLowerCase());
-        if (myIndex !== -1) {
-            ownRow = currentList[myIndex];
-            ownRank = myIndex + 1;
-        }
+        if (myIndex !== -1) { ownRow = currentList[myIndex]; ownRank = myIndex + 1; }
     }
 
     const leader = currentList[0] || null;
     const runner = currentList[1] || null;
     const margin = (leader && runner) ? (leader.votes - runner.votes) : (leader ? leader.votes : 0);
-
     const reportedCount = new Set(reportedRaw.map(r => r.stream_code)).size;
 
     OVERVIEW = {
-      aspirant: USER,
-      viewingPosition: VIEW_POS,
-      tabTotals: tabTotals,
-      leaderboard: currentList,
-      globalTotal: globalTotal,
-      leader: leader,
-      runner: runner,
-      margin: margin,
-      ownRank: ownRank,
-      ownRow: ownRow,
-      ownPhoto: ownRow ? ownRow.photo : '',
-      wards: [], // We will build the ward drill-down in the next step
-      totalStreams: streamsData ? streamsData.length : 0,
-      reported: reportedCount,
+      aspirant: USER, viewingPosition: VIEW_POS, tabTotals: tabTotals,
+      leaderboard: currentList, globalTotal: globalTotal, leader, runner, margin,
+      ownRank, ownRow, ownPhoto: ownRow ? ownRow.photo : '', wards: formattedWards,
+      totalStreams: streamsData ? streamsData.length : 0, reported: reportedCount,
       generatedAt: new Date().toISOString()
     };
 
-    // 5. Trigger your original UI functions
+    // 6. Render UI
     lastRefreshAt = Date.now();
     updateTopMeta();
     renderTabs();
     renderHero();
-    renderDrillGrid(); // This will show 'No wards configured' for now
+    renderDrillGrid(); 
     renderBoard();
     setPulse('live');
     
@@ -2390,27 +2386,72 @@ async function loadOverview(silent) {
   } catch (error) {
     console.error("Supabase error:", error);
     setPulse('stale');
-    if (!silent) toast('Connection error to database.', 'error');
+    if (!silent) toast('Connection error.', 'error');
   }
 }
-function loadDrill(silent) {
-  google.script.run
-    .withSuccessHandler(function (data) {
-      if (!data || data.error) {
-        toast((data && data.error) || 'Failed to load breakdown.', 'error');
-        return;
-      }
-      DRILL_DATA = data;
-      renderDrillGrid();
-      renderBoard(); 
-    })
-    .withFailureHandler(function (e) {
-      console.error(e);
-      if (!silent) toast('Connection error.', 'error');
-    })
-    .getAspirantDrilldown(TOKEN, VIEW_POS, DRILL_WARD, DRILL_CENTRE);
-}
+async function loadDrill(silent) {
+  try {
+    if (DRILL_CENTRE) {
+      // === FETCH STREAMS FOR A CENTRE ===
+      // We fetch the streams, and we join the results for the specific position
+      const { data, error } = await db
+        .from('streams')
+        .select(`code, stream_number, centre_id, results!left ( votes, candidate_code, position, candidates(name, party, photo_url) )`)
+        .eq('centre_id', DRILL_CENTRE);
+      
+      if (error) throw error;
 
+      // Format streams for your UI
+      const formattedStreams = data.map(s => {
+        // Filter results just for the current position
+        const posResults = s.results.filter(r => r.position === VIEW_POS);
+        const candidates = posResults.map(r => ({
+          code: r.candidate_code, name: r.candidates.name, party: r.candidates.party, photo: r.candidates.photo_url, votes: r.votes
+        })).sort((a, b) => b.votes - a.votes);
+
+        const total = candidates.reduce((sum, c) => sum + c.votes, 0);
+        const leader = candidates[0] || null;
+
+        return {
+          streamCode: s.code, streamNumber: s.stream_number, streamLabel: 'STR ' + String(s.stream_number).padStart(2, '0'),
+          centreName: DRILL_CENTRE_NAME, candidates: candidates, leader: leader, totalVotes: total,
+          leaderPct: total > 0 && leader ? ((leader.votes / total) * 100).toFixed(1) : '0.0',
+          submitted: posResults.length > 0
+        };
+      }).sort((a, b) => a.streamNumber - b.streamNumber);
+
+      DRILL_DATA = { level: 'stream', streams: formattedStreams };
+      renderDrillGrid();
+      renderBoard();
+
+    } else if (DRILL_WARD) {
+      // === FETCH CENTRES FOR A WARD ===
+      const { data: centresData, error: err1 } = await db.from('centres').select('*').eq('ward_id', DRILL_WARD);
+      if (err1) throw err1;
+
+      const { data: streamsData } = await db.from('streams').select('code, centre_id').eq('ward_id', DRILL_WARD);
+      const { data: wardRes } = await db.from('ward_results').select('*, candidates!inner(name, party, photo_url)').eq('ward_id', DRILL_WARD).eq('position', VIEW_POS);
+      const { data: reportedRaw } = await db.from('results').select('stream_code');
+
+      const formattedCentres = centresData.map(c => {
+        const cStreams = streamsData.filter(s => s.centre_id === c.id);
+        const cStreamCodes = cStreams.map(s => s.code);
+        const reportedInCentre = new Set(reportedRaw.map(r => r.stream_code).filter(code => cStreamCodes.includes(code))).size;
+        return {
+            centreId: c.id, centreName: c.name, candidates: [], leader: null, totalVotes: 0, leaderPct: '0.0',
+            streamsTotal: cStreams.length, streamsDone: reportedInCentre
+        };
+      });
+
+      DRILL_DATA = { level: 'centre', centres: formattedCentres };
+      renderDrillGrid();
+      renderBoard();
+    }
+  } catch (err) {
+    console.error("Drill error:", err);
+    toast('Failed to load breakdown.', 'error');
+  }
+}
 // ================================================================
 //  RENDERING — TABS
 // ================================================================
